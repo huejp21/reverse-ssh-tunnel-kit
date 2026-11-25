@@ -53,26 +53,31 @@ start_tunnel() {
     -p "$RELAY_PORT" -i "$KEY" -R "127.0.0.1:${FWD_PORT}:127.0.0.1:${EXPOSE_PORT}" "${RELAY_USER}@${RELAY_IP}"
 }
 
+do_on() {
+  ask_config
+  ensure_sshd
+  ensure_key
+  key_ok || push_key
+  start_tunnel
+  sleep 3
+  systemctl --user --no-pager status "$UNIT" 2>&1 | head -5
+  echo "Relay can now connect with:  ssh -p ${FWD_PORT} $(whoami)@127.0.0.1"
+}
+
+do_off() {
+  systemctl --user stop "$UNIT" 2>/dev/null || true
+  systemctl --user reset-failed "$UNIT" 2>/dev/null || true
+  systemctl --user stop worktunnel 2>/dev/null || true
+  systemctl --user reset-failed worktunnel 2>/dev/null || true
+  echo "tunnel off"
+}
+
 case "${1:-on}" in
-  on)
-    ask_config
-    ensure_sshd
-    ensure_key
-    key_ok || push_key
-    start_tunnel
-    sleep 3
-    systemctl --user --no-pager status "$UNIT" 2>&1 | head -5
-    echo "Relay can now connect with:  ssh -p ${FWD_PORT} $(whoami)@127.0.0.1"
-    ;;
-  off)
-    systemctl --user stop "$UNIT" 2>/dev/null || true
-    systemctl --user reset-failed "$UNIT" 2>/dev/null || true
-    systemctl --user stop worktunnel 2>/dev/null || true
-    systemctl --user reset-failed worktunnel 2>/dev/null || true
-    echo "tunnel off"
-    ;;
+  on)      do_on ;;
+  off)     do_off ;;
+  restart) do_off; sleep 1; do_on ;;
   status)
     systemctl --user is-active --quiet "$UNIT" && echo "revtun ON" || { systemctl --user is-active --quiet worktunnel && echo "legacy worktunnel ON" || echo "tunnel OFF"; }
     ;;
-  *) echo "usage: $0 {on|off|status}"; exit 1;;
+  *) echo "usage: $0 {on|off|restart|status}"; exit 1;;
 esac
